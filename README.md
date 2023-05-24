@@ -9,6 +9,10 @@ This project is a simple image generator using the OpenAI DALL-E API. It's compo
 
 These instructions will guide you on how to run this application.
 
+### Architecture Diagram
+
+![dall-e.png](dall-e.png)
+
 ### Prerequisites
 
 * AWS account
@@ -51,9 +55,15 @@ Also remember to modify the secret_name in the lambda function to match accordin
 
 1. Clone the repository.
 2. Navigate to the `frontend` directory.
-3. Install the dependencies using `npm install`.
-4. Start the application using `npm start`.
-5. Open `http://localhost:3000` to view it in the browser.
+3. Create a `.env` file in the root directory of your project. Add the API Gateway endpoint URL as `REACT_APP_AWS_API_GATEWAY` like so:
+
+```bash
+REACT_APP_AWS_API_GATEWAY=https://your-api-gateway-url
+```
+
+4. Install the dependencies using `npm install`.
+5. Start the application using `npm start`.
+6. Open `http://localhost:3000` to view it in the browser.
 
 ### Backend
 
