@@ -15,13 +15,14 @@ uuid_value = uuid.uuid4()
 # Initialize a DynamoDB resource
 dynamodb = boto3.resource('dynamodb')
 
+table_name = os.getenv("DYNAMODB_TABLE")
 # This should be your DynamoDB table name
-table = dynamodb.Table('dall-e')
+table = dynamodb.Table(table_name)
 
 # Upload the image to an S3 bucket
 s3 = boto3.client('s3')
 
-secret_name = "stage/api/openai"
+secret_name = "prod/api/openai"
 region_name = "us-east-1"
 
 # Create a Secrets Manager client
@@ -45,19 +46,20 @@ def get_secret():
     # Decrypts secret using the associated KMS key.
     secret = get_secret_value_response['SecretString']
     print(secret)
-    return json.loads(secret)
+    return secret
 
 
 def lambda_handler(event, context):
     # Get variables from parameters
+    print(event)
     message = event['message']
 
     # Call the OpenAI Image generation endpoint
     #openai.api_key = os.getenv("openai_api_key")
-    secret = get_secret()
-
+    #secret = get_secret()
+    openai.api_key = get_secret()
     # Extract the value of openai_api_key
-    openai.api_key = secret.get('openai_api_key')
+    #openai.api_key = secret
     #openai.api_key = get_secret()
     response = openai.Image.create(
         prompt=message,
@@ -70,7 +72,7 @@ def lambda_handler(event, context):
 
     try:
         s3_upload_path = f'{uuid_value}.png'
-        s3_bucket = os.getenv("s3_bucket")  # replace with your bucket name
+        s3_bucket = os.getenv("BUCKET_NAME")  # replace with your bucket name
         s3.put_object(Bucket=s3_bucket, Key=s3_upload_path, Body=image_data, ContentDisposition='inline', ContentType='image/png')
     except NoCredentialsError:
         return {

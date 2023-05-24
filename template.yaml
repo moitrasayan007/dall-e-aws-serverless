@@ -2,12 +2,99 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: An AWS Serverless Image Generation Application.
 
+Globals:
+  Function:
+    MemorySize: 256
+    Timeout: 300
+
+
 Resources:
   DallEApi:
     Type: AWS::Serverless::Api
     Properties:
       StageName: Prod
       Cors: "'*'"
+      TracingEnabled: true
+      AccessLogSetting:
+        DestinationArn: !GetAtt DallEApiAccessLogs.Arn
+        Format: '{"requestId":"$context.requestId", "ip": "$context.identity.sourceIp", "caller":"$context.identity.caller", "user":"$context.identity.user","requestTime":"$context.requestTime", "httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath", "status":"$context.status","protocol":"$context.protocol", "responseLength":"$context.responseLength"}'
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          LoggingLevel: INFO
+          DataTraceEnabled: true
+          ThrottlingBurstLimit: 10 
+          ThrottlingRateLimit: 100
+      DefinitionBody:
+        openapi: '3.0.1'
+        info:
+          title: DallE API
+        paths:
+          /dall-e:
+            options:
+              summary: CORS support
+              description: Enable CORS by returning correct headers
+              operationId: cors
+              consumes:
+              - '*/*'
+              produces:
+              - '*/*'
+              responses:
+                '200':
+                  description: Default response for CORS method
+                  headers:
+                    Access-Control-Allow-Headers:
+                      type: string
+                      default: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                    Access-Control-Allow-Methods:
+                      type: string
+                      default: "'OPTIONS,POST'"
+                    Access-Control-Allow-Origin:
+                      type: string
+                      default: "'*'"
+              x-amazon-apigateway-integration:
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                passthroughBehavior: 'when_no_match'
+                type: 'mock'
+            post:
+              x-amazon-apigateway-integration:
+                uri: 
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DallELambdaFunction.Arn}/invocations
+                passthroughBehavior: when_no_match
+                httpMethod: POST
+                type: aws
+                responses:
+                  default:
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                    statusCode: "200"
+                    responseTemplates:
+                      application/json: ""
+              responses: 
+                '200':
+                  description: "Successful response"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: "string"
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                        properties: {}
+
+
+
+  DallEApiAccessLogs:
+    Type: AWS::Logs::LogGroup
+
 
   DallELambdaFunction:
     Type: AWS::Serverless::Function
@@ -15,10 +102,34 @@ Resources:
       CodeUri: backend/
       Handler: lambda_function.lambda_handler
       Runtime: python3.10
+      Tracing: Active
       Environment:
         Variables:
-          SECRET_NAME: !Ref DallEApiSecret
           BUCKET_NAME: !Ref DallES3Bucket
+          DYNAMODB_TABLE: !Ref DallEDynamoDBTable
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Action:
+                - "s3:GetObject"
+                - "s3:PutObject"
+              Resource: 
+                - !GetAtt DallES3Bucket.Arn
+                - !Sub ${DallES3Bucket.Arn}/*
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Action:
+                - "secretsmanager:GetSecretValue"
+              Resource: "*"
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Action:
+                - "dynamodb:PutItem"
+              Resource: 
+                - !GetAtt DallEDynamoDBTable.Arn
       Events:
         DallE:
           Type: Api
@@ -27,14 +138,14 @@ Resources:
             Method: post
             RestApiId: !Ref DallEApi
 
+  DallELambdaFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${DallELambdaFunction}'
+      RetentionInDays: 14
+
   DallES3Bucket:
     Type: AWS::S3::Bucket
-
-  DallEApiSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: dall-e-api-secret
-      SecretString: YOUR_SECRET_STRING
 
   DallEDynamoDBTable:
     Type: AWS::DynamoDB::Table
@@ -44,7 +155,7 @@ Resources:
         - AttributeName: prompt
           AttributeType: S
         - AttributeName: timestamp
-          AttributeType: N
+          AttributeType: S
       KeySchema:
         - AttributeName: prompt
           KeyType: HASH
